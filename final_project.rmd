@@ -1,0 +1,423 @@
+---
+title: "Forecasting the United States' Theoretical Unemployment Rate in the Absence of the Covid-19 Pandemic"
+author: "Lyndsey Umsted"
+date: "2023-11-15"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Abstract
+
+
+## Introduction
+
+This time series analysis project uses data on the United States' unemployment rate reported in percentage values at monthly increments. The data was obtained from the Federal Reserve Economic Data of the Federal Reserve Bank of St. Louis. The unemployment rate is calculated as the number of unemployed persons as a percentage of the labor force. The labor force is considered as people 16 years old or above within the United States, who do not reside in institutions (penal, mental, homes for aged), and are not on active duty in the military. The original data contains the unemployment rate between January, 1949 and October, 2023. As a reflection of economic stability, the unemployment rate is highly dependent on economic events such as recessions that can be seen in past years. Due to the Great Recession of 2008 which doubled the unemployment rate in one year (https://www.forbes.com/advisor/investing/great-recession/#:~:text=The%20Great%20Recession%20of%202008,down%2057%25%20from%20its%20highs.), this project begins with data from January, 2010 and onward for forecasting purposes. 
+
+The Covid-19 Pandemic induced a recession in 2020 where businesses suspended operations or closed in some cases resulting in large numbers of layoffs that increased the unemployment rate from 3.4% in December of 2019 to a high of 14.4% in April of 2020. This anomalous event spiked the unemployment rate in a short period of time, and as businesses reopened and Covid-19 was contained, this number has decreased again to almost pre-pandemic rates. Using data from 2010 to 2018, leaving 2019 for validation, the question I want to answer is, how would predicted unemployment levels from January of 2020 to present differ from the observations seen with the Covid-19 Pandemic. Are the unemployment rates in the past three to four years much higher than what a predictive model would forecast?
+
+Forecasting unemployment rates is important to measure future economic stability. Being able to compare predictions to observations when an anomalous event happens allows us to measure the impact significance to prepare for future events.
+
+
+
+
+
+
+
+Below we can visualize the observed unemployment rate from  January of 2010 to the present:
+
+```{r, echo=FALSE}
+unemployment <- read.csv("data/unemployment.csv")
+
+# converting to datetime object 
+unemployment[['Date']] <- as.Date(unemployment[[1]],
+                                  format ="%Y-%d-%m")
+
+unemployment_ts <- ts(unemployment$unemployment , frequency = 12, start=c(2010,1), end = c(2023,10))
+
+# visualize data from 2010 to present
+plot.ts(unemployment_ts, ylab = "unemployment (%)", main = "The United States' Unemployment Rate From 2010 to Present")
+abline(v=c(2020.2,3), col = "red")
+text(x = c(2017.75,3), y = 12,"First Lockdown -
+     March 2020", col = "red")
+```
+
+
+
+A closer look:
+```{r}
+unemployment_ts2 <- ts(unemployment$unemployment[97:166], frequency = 12, start=c(2018), end = c(2023))
+
+# visualize data from 2010 to present
+plot.ts(unemployment_ts2, ylab = "unemployment (%)", main = "The United States' Unemployment Rate During the Covid-19 Pandemic")
+abline(v=c(4,2020.25), col = "red")
+text(x = c(3,2021.75), y = 11,"- Highest Unemployement
+     Rate at 14.4%", col = "red")
+```
+
+
+
+I will use ten years of data from January, 2010, to December, 2019 to predict what the U.S. unemployment rate if Covid-19 or any other anomalous event had not happened. 
+
+
+Testing and Training Split:
+```{r}
+train <- unemployment_ts[c(1:108)]
+# leaving out 12 data points for testing set
+test <- unemployment_ts[c(109:120)]
+```
+
+
+Visualize Training Data, trend and mean:
+```{r}
+plot(1:length(train),train, main = "Time Series", type = 'l',xlab='index')
+
+index = 1: length(train)
+trend <- lm(train ~ index)
+abline(trend, col="red")
+abline(h=mean(train) , col='blue')
+```
+
+Non-stationary: linear negative trend and seasonality. Variance appears constant, although it may decrease over time.
+
+Let's check stationarity with graphs:
+```{r}
+hist(train, col="light blue", xlab="", main="histogram; unemployment data")
+
+acf(train,lag.max=60, main="ACF of the Unemployment Data") 
+```
+
+The ACF plot shows non-stationarity.
+
+Because of the slight change in variance I noticed, I want to use Box-Cox to check if a transformation is necessary.
+
+Check Box-Cox transformation:
+```{r}
+library(MASS)
+bcTransform <- boxcox(train~as.numeric(1:length(train)))
+# optimal lambda
+lambda <- bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+lambda
+```
+
+The value of lambda is 0.2626263, so I will use 0.25 here to transform the data.
+
+The confidence interval contains 0.5, so I will compare a lambda value of 0.5 and 0.25.
+
+
+
+
+
+```{r}
+par(mfrow = c(1,2))
+bc_unemployment <- lambda**(-1)*(train**(lambda) - 1)
+
+plot(1:length(bc_unemployment),bc_unemployment, main = "Time Series", type = 'l',xlab='index')
+
+index = 1: length(bc_unemployment)
+trend <- lm(bc_unemployment ~ index)
+abline(trend, col="red")
+abline(h=mean(bc_unemployment) , col='blue')
+
+hist(bc_unemployment, col="light blue", xlab="", main="histogram; lambda = 0.25")
+```
+
+Variance:
+```{r}
+var(bc_unemployment)
+```
+
+
+
+
+Decomposition of Box-Cox data
+```{r}
+# install.packages("ggplot2")
+# install.packages("ggfortify")
+library(ggplot2)
+y <- ts(as.ts(bc_unemployment), frequency = 12)
+decomp <- decompose(y)
+plot(decomp)
+```
+
+Need to deseasonalize and detrend the time series:
+
+```{r}
+dunemployment <- diff(bc_unemployment, 1)
+ddunemployment <- diff(dunemployment, 12)
+
+plot(1:length(ddunemployment),ddunemployment, main = "Time Series", type = 'l',xlab='index')
+
+index = 1: length(ddunemployment)
+trend <- lm(ddunemployment ~ index)
+abline(trend, col="red")
+abline(h=mean(ddunemployment) , col='blue')
+```
+
+Histogram of transformed, detrended, and deseasonalized data:
+
+```{r}
+hist(ddunemployment, col="light blue", xlab="", main="histogram; Box-Cox unemployment data differenced at lags 1 and 12")
+```
+
+
+ACF/PACF graphs of deseasonalized and detrended time series:
+
+```{r}
+acf(ddunemployment,lag.max=60, main="ACF of the Transformed Data") 
+pacf(ddunemployment,lag.max=60, main="PACF of the Transformed Data") 
+```
+
+The ACF plot shows large spikes at lags 1, 7, and 12. The PACF plot shows large coefficients at lags 1, 2, 3, 11, and 12.
+
+SMA model to try:
+SARIMA(0,1,1)(0,1,1) s=12
+
+MA(12)?
+
+
+
+SARIMA(0,1,1)(0,1,1) s=12:
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(0,1,1), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+summary(arma_model)
+```
+
+AICc is -324.65
+
+MA(12):
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(0,1,12), seasonal = list(order = c(0,1,0), period = 12), method="ML")
+summary(arma_model)
+```
+
+
+0 lies within the confidence interval at coefficients ma2, ma4, ma5, ma6, ma7, ma8, ma9, ma11
+
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(0,1,12), seasonal = list(order = c(0,1,0), period = 12), method="ML", fixed = c(NA,0,NA,0,0,0,0,0,0,NA,0,NA))
+summary(arma_model)
+```
+
+0 lies within the confidence interval at coefficient ma3
+
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(0,1,12), seasonal = list(order = c(0,1,0), period = 12), method="ML", fixed = c(NA,0,0,0,0,0,0,0,0,NA,0,NA))
+summary(arma_model)
+```
+
+AIcc = -326.42
+
+Check invertibility of the model:
+```{r}
+plot.roots(NULL,polyroot(c(-0.3457,0,0,0,0,0,0,0,0,0.3354,0,-0.9446)), main="roots of MA model")
+```
+
+
+The model is not invertible.
+
+Check SARIMA(1,1,0)(1,1,0):
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(1,1,0), seasonal = list(order = c(1,1,0), period = 12), method="ML")
+summary(arma_model)
+```
+
+AICc = -314.9
+
+
+
+AR(12):
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(12,1,0), seasonal = list(order = c(0,1,0), period = 12), method="ML")
+summary(arma_model)
+```
+
+0 lies within the confidence interval at coefficients ar2, ar3, ar4, ar5, ar6, ar7, ar8, ar9, ar10, and ar11:
+
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(12,1,0), seasonal = list(order = c(0,1,0), period = 12), method="ML", fixed = c(NA,0,0,0,0,0,0,0,0,0,0,NA))
+summary(arma_model)
+```
+
+
+0 lies within the confidence interval at coefficient ar1
+
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(12,1,0), seasonal = list(order = c(0,1,0), period = 12), method="ML", fixed = c(0,0,0,0,0,0,0,0,0,0,0,NA))
+summary(arma_model)
+```
+
+
+The AICc value is -312.34
+
+
+Check Stationarity of AR(12) model:
+```{r}
+plot.roots(NULL,polyroot(c(0,0,0,0,0,0,0,0,0,0,0,-0.5637)), main="roots of AR model")
+```
+
+The model is stationary!
+
+Both models are stationary and invertible, however the SARIMA(0,1,1)(0,1,1) s=12 has the smaller AICc value of -324.65 so we will continue with diagnostic checking on this model:
+
+Residual Analysis:
+```{r}
+library(forecast)
+arma_model <- arima(bc_unemployment, order = c(0,1,1), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+summary(arma_model)
+```
+
+
+
+```{r}
+# residuals
+residuals <- residuals(arma_model)
+
+# plotting residuals
+plot(residuals)
+# plot(1:length(time_series),time_series, main =
+# "Time Series", type = 'l',xlab='index')
+
+index = 1: length(residuals)
+trend <- lm(residuals ~ index)
+abline(trend, col="red")
+abline(h=mean(residuals) , col='blue')
+# plot the histogram of the residuals:
+hist(residuals)
+#q-q plot
+qqnorm(residuals)
+qqline(residuals)
+```
+
+
+The residuals distribution is approximately normal centered at 0. In the qq plot, the dots do follow close to the line. The plotted residuals do resemble white noise and the trend and mean appear to coincide at about 0.
+
+
+Checking ACF/PACF of the residuals
+```{r}
+acf(residuals)
+pacf(residuals)
+```
+
+
+The ACF and PACF plots of the residuals do not show any large lags that suggest a need to ajust the model.
+
+Test of normality:
+```{r}
+#Shapiro test for normality
+shapiro.test(residuals)
+```
+
+The p-value is greater than 0.05, meaning the residuals passed the normality test.
+
+
+
+
+3. Checking Portmanteau Statistics for p-values < 0.05:
+
+There are 108 observations in my training set, therefore lag = 10. Within my model I have 2 estimated coefficients: ma1 and sma1 thus fitdf = 2 for the Box-Pierce and Ljung-Box Tests.
+
+```{r}
+#Box-Pierce test
+Box.test(residuals, lag = 10, type = c("Box-Pierce"), fitdf = 2)
+
+#Ljung-Box test
+Box.test(residuals, lag = 10, type = c("Ljung-Box"), fitdf = 2)
+
+#McLeod-Li test
+Box.test(residuals^2, lag = 10, type = c("Ljung-Box"))
+```
+
+
+All values are greater than 0.05! Now we can forecast using the SARIMA(0,1,1)(0,1,1) s=12 model.
+
+Forecasting on transformed data:
+```{r}
+library(forecast)
+
+pred.tr <- predict(arma_model, n.ahead = 12)
+
+U.tr= pred.tr$pred + 2*pred.tr$se
+L.tr= pred.tr$pred - 2*pred.tr$se
+ts.plot(bc_unemployment, xlim=c(1,length(bc_unemployment)+12), ylim = c(min(L.tr),max(bc_unemployment)), main = "Forecasted Predictions on Transformed Data")
+lines(U.tr, col="blue", lty="dashed")
+lines(L.tr, col="blue", lty="dashed")
+points((length(bc_unemployment)+1):(length(bc_unemployment)+12), pred.tr$pred, col="red")
+
+# zoom in
+ts.plot(bc_unemployment, xlim=c(97,length(bc_unemployment)+12), ylim = c(min(L.tr),max(U.tr)), main = "Forecasted Predictions on Transformed Data")
+lines(U.tr, col="blue", lty="dashed")
+lines(L.tr, col="blue", lty="dashed")
+points((length(bc_unemployment)+1):(length(bc_unemployment)+12), pred.tr$pred, col="red")
+```
+
+
+
+Forecasting on original data:
+```{r}
+library(forecast)
+
+pred.tr <- predict(arma_model, n.ahead = 12)
+
+pred.orig <- ((pred.tr$pred/lambda**(-1)) + 1)^(1/lambda)
+
+U = ((U.tr/lambda**(-1)) + 1)^(1/lambda)
+L = ((L.tr/lambda**(-1)) + 1)^(1/lambda)
+
+ts.plot(train, xlim=c(1,length(unemployment_ts)), ylim = c(min(L),max(unemployment_ts)), main = "Forecasted Predictions on Original Data")
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(train)+1):(length(train)+12), pred.orig, col="red")
+points((length(test)+97):(length(test)+108), test, col="green")
+
+# zoom in
+ts.plot(train, xlim=c(109,length(train)+12), ylim = c(min(L),max(U)), main = "Forecasted Predictions on Original Data")
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+points((length(train)+1):(length(train)+12), pred.orig, col="red")
+points((length(test)+97):(length(test)+108), test, col="green")
+```
+
+
+
+
+
+
+Predicting through 2023:
+
+
+```{r}
+library(forecast)
+
+pred.tr <- predict(arma_model, n.ahead = 60)
+U.tr= pred.tr$pred + 2*pred.tr$se
+L.tr= pred.tr$pred - 2*pred.tr$se
+
+pred.orig <- ((pred.tr$pred/lambda**(-1)) + 1)^(1/lambda)
+
+U = ((U.tr/lambda**(-1)) + 1)^(1/lambda)
+L = ((L.tr/lambda**(-1)) + 1)^(1/lambda)
+
+ts.plot(unemployment$unemployment, xlim=c(1,length(unemployment_ts)), ylim = c(min(L),max(unemployment$unemployment)), main = "Forecasted Predictions on Original Data")
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+lines((length(train)+1):(length(train)+60), pred.orig, col="red")
+
+# zoom in
+ts.plot(unemployment$unemployment, xlim=c(120,length(train)+60), ylim = c(min(L),max(unemployment$unemployment)), main = "Forecasted Predictions on Original Data")
+lines(U, col="blue", lty="dashed")
+lines(L, col="blue", lty="dashed")
+lines((length(train)+1):(length(train)+60), pred.orig, col="red")
+```
